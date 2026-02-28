@@ -1,5 +1,5 @@
-﻿// netlify/functions/verifyRecaptcha.cjs
-exports.handler = async (event) => {
+﻿// netlify/functions/verifyRecaptcha.js
+export const handler = async (event) => {
   const headers = {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
@@ -21,27 +21,6 @@ exports.handler = async (event) => {
   }
 
   try {
-    // --- fetch fallback para runtimes sin global fetch ---
-    let fetchFn = (typeof globalThis !== "undefined" && globalThis.fetch) || null;
-    if (!fetchFn) {
-      try {
-        const pkgName = "node" + "-fetch";
-        const mod = await import(pkgName).catch(() => null);
-        fetchFn = (mod && (mod.default || mod)) || null;
-      } catch (e) {
-        fetchFn = null;
-      }
-    }
-
-    if (!fetchFn) {
-      return {
-        statusCode: 500,
-        headers,
-        body: JSON.stringify({ ok: false, success: false, msg: "Fetch no disponible en el runtime" })
-      };
-    }
-    // --- end fallback ---
-
     const { token } = JSON.parse(event.body || "{}");
 
     if (!token) {
@@ -52,14 +31,10 @@ exports.handler = async (event) => {
       };
     }
 
-    // Soportar ambos nombres de variable de entorno
-    const secretKey =
-      (process.env.RECAPTCHA_SECRET_KEY && process.env.RECAPTCHA_SECRET_KEY.trim()) ||
-      (process.env.RECAPTCHA_SECRET && process.env.RECAPTCHA_SECRET.trim()) ||
-      null;
+    const secretKey = process.env.RECAPTCHA_SECRET_KEY?.trim() || null;
 
     if (!secretKey) {
-      console.error("Falta RECAPTCHA_SECRET_KEY / RECAPTCHA_SECRET en env vars");
+      console.error("Falta RECAPTCHA_SECRET_KEY en env vars");
       return {
         statusCode: 500,
         headers,
@@ -67,16 +42,15 @@ exports.handler = async (event) => {
       };
     }
 
-
-     const recaptchaResp = await fetchFn('https://www.google.com/recaptcha/api/siteverify', {
-       method: 'POST',
-       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-       body: `secret=${encodeURIComponent(secretKey)}&response=${encodeURIComponent(token)}`
-     });
+    const recaptchaResp = await fetch("https://www.google.com/recaptcha/api/siteverify", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `secret=${encodeURIComponent(secretKey)}&response=${encodeURIComponent(token)}`
+    });
 
     if (!recaptchaResp.ok) {
       const text = await recaptchaResp.text();
-      console.error('Google reCAPTCHA returned non-200:', recaptchaResp.status, text);
+      console.error("Google reCAPTCHA returned non-200:", recaptchaResp.status, text);
       return {
         statusCode: 502,
         headers,
@@ -85,9 +59,9 @@ exports.handler = async (event) => {
     }
 
     const recaptchaData = await recaptchaResp.json();
-    console.log('reCAPTCHA verification result:', recaptchaData);
+    console.log("reCAPTCHA verification result:", recaptchaData);
 
-    const minScore = parseFloat(process.env.RECAPTCHA_MIN_SCORE || '0.5');
+    const minScore = parseFloat(process.env.RECAPTCHA_MIN_SCORE || "0.5");
 
     if (!recaptchaData.success) {
       return {
@@ -97,7 +71,7 @@ exports.handler = async (event) => {
       };
     }
 
-    if (typeof recaptchaData.score !== 'undefined' && recaptchaData.score < minScore) {
+    if (typeof recaptchaData.score !== "undefined" && recaptchaData.score < minScore) {
       return {
         statusCode: 400,
         headers,
@@ -105,8 +79,6 @@ exports.handler = async (event) => {
       };
     }
 
-    // Si llegamos acá, reCAPTCHA fue validado correctamente.
-    // NO enviamos EmailJS desde el servidor — devolvemos la verificación al cliente.
     return {
       statusCode: 200,
       headers,
